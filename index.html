@@ -923,14 +923,16 @@
             // 建立前端結構化列資料 (包含真實的回應文字)
             const rowData = {
                 id: simState.currentIndex,
-                title: taskPrompt, // 顯示真實題目
-                model: activeModel,
-                type: data.types,
-                latency: data.latency,
-                fad: data.fad,
-                hrs: data.hrs,
-                rawOutput: data.response, // ★ 保存後端返回的真實模型文字
-                timestamp: new Date().toLocaleTimeString('en-US', { hour12: false })
+    title: taskPrompt,
+    model: activeModel,
+    type: data.types,
+    latency: data.latency,
+    fad: data.fad,
+    hrs: data.hrs,
+    // 【替換重點】加入了多重欄位映射，防止抓不到後端資料
+    rawOutput: data.response || data.rawOutput || data.text || data.content || data.message || "【系統警告】前端無法讀取文本，請檢查後端 API 是否正確回傳了文本欄位。",
+    timestamp: new Date().toLocaleTimeString('en-US', { hour12: false })
+
             };
 
             simState.results.push(rowData);
