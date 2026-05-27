@@ -951,58 +951,61 @@
         };
 
         // 增量動態渲染 UI 數據面板
-        function updateUIIncremental(newRow, totalData, counts, currentCount) {
+// 增量更新 UI 函式
+        function updateUIIncremental(newRow, data, counts, currentCount) {
             const totalEvals = currentCount * 3; 
             
-            const avgHrs = totalData.reduce((sum, r) => sum + parseFloat(r.hrs), 0) / currentCount;
-            const avgFad = totalData.reduce((sum, r) => sum + parseFloat(r.fad), 0) / currentCount;
-            const avgLat = totalData.reduce((sum, r) => sum + r.latency, 0) / currentCount;
+            // 計算當前平均值
+            const avgHrs = data.reduce((sum, r) => sum + parseFloat(r.hrs), 0) / currentCount;
+            const avgFad = data.reduce((sum, r) => sum + parseFloat(r.fad), 0) / currentCount;
+            const avgLat = data.reduce((sum, r) => sum + r.latency, 0) / currentCount;
             const intervention = ((counts.B + counts.C + counts.D) / totalEvals * 100).toFixed(1);
             
             const activeMechs = Object.values(mechanisms).filter(v=>v).length;
-            const simulatedKappa = (0.84 + (activeMechs * 0.01) + (Math.random() * 0.015)).toFixed(2);
+            const simulatedKappa = (0.83 + (activeMechs * 0.01) + (Math.random() * 0.02)).toFixed(2);
 
-            // 更新看板指標
+            // 更新 KPI 看板
             document.getElementById('kpi-hrs').innerText = avgHrs.toFixed(3);
             document.getElementById('kpi-fad').innerText = avgFad.toFixed(2);
             document.getElementById('kpi-latency').innerText = Math.floor(avgLat).toLocaleString();
             document.getElementById('kpi-intervention').innerText = `${intervention}%`;
             document.getElementById('kpi-kappa').innerText = simulatedKappa;
 
-            // ★ 核心改動：回答預覽生成 (擷取前 15~30 個字)
-            let previewText = "（模型採取防禦機制安全拒答）";
-            if (newRow.rawOutput && newRow.rawOutput.trim().length > 0) {
-                const cleaned = newRow.rawOutput.replace(/[\n\r\t]/g, ' ').trim();
-                previewText = cleaned.length > 28 ? cleaned.substring(0, 28) + "..." : cleaned;
-            }
+            // ★ 核心改動：直接提取完整原文本，不做任何截斷
+            const fullText = (newRow.rawOutput && newRow.rawOutput.trim().length > 0) 
+                ? newRow.rawOutput 
+                : "（模型採取防禦機制安全拒答，或目前處於本地模擬模式）";
 
+            // 即時加入新資料列到表格
             const tbody = document.getElementById('table-body');
             const tr = document.createElement('tr');
-            tr.className = 'hover:bg-slate-50 transition-colors cursor-pointer group';
+            tr.className = 'hover:bg-slate-50 transition-colors cursor-pointer group border-b border-slate-100';
             tr.onclick = () => openModal(encodeURIComponent(JSON.stringify(newRow)));
             
             const badgesHTML = newRow.type.map(t => {
                 let badgeClass = t === 'Type_A' ? 'bg-emerald-100 text-emerald-700' : t === 'Type_B' ? 'bg-amber-100 text-amber-700' : t === 'Type_C' ? 'bg-rose-100 text-rose-700' : 'bg-slate-200 text-slate-700';
-                return `<td class="px-1 py-4"><span class="px-1 py-1 rounded-md text-[9px] font-black uppercase tracking-wider ${badgeClass} block text-center whitespace-nowrap">${t.replace('Type_', '')}</span></td>`;
+                return `<td class="px-1 py-4 align-top pt-6"><span class="px-1 py-1 rounded-md text-[9px] font-black uppercase tracking-wider ${badgeClass} block text-center whitespace-nowrap">${t.replace('Type_', '')}</span></td>`;
             }).join('');
 
-            // 將預覽區塊注入題目名稱下方
+            // ★ 表格結構改動：加入 fullText 區塊，並設定 align-top 確保排版對齊
             tr.innerHTML = `
-                <td class="px-6 py-4 max-w-md">
-                    <p class="font-bold text-slate-800 group-hover:text-indigo-600 transition-colors line-clamp-1">#${String(newRow.id+1).padStart(3, '0')}: ${newRow.title}</p>
-                    <p class="text-[11px] text-slate-400 font-medium italic mt-0.5 line-clamp-1 bg-slate-50 border border-slate-100 rounded px-1.5 py-0.5 text-indigo-900/70">
-                        <i class="fa-solid fa-quote-left text-[9px] mr-1 text-slate-300"></i>${previewText}
-                    </p>
-                    <p class="text-[9px] text-slate-400 font-mono mt-0.5">${newRow.model}</p>
+                <td class="px-6 py-4 max-w-xl align-top">
+                    <p class="font-bold text-slate-800 group-hover:text-indigo-600 transition-colors">${newRow.title}</p>
+                    <p class="text-[10px] text-slate-400 font-mono mt-1 mb-3"><i class="fa-solid fa-robot"></i> ${newRow.model}</p>
+                    <div class="text-[13px] text-slate-700 bg-slate-50 border border-slate-200 rounded-xl p-4 whitespace-pre-wrap font-sans leading-relaxed shadow-inner">
+                        ${fullText}
+                    </div>
                 </td>
                 ${badgesHTML}
-                <td class="px-4 py-4 text-right font-mono text-slate-500 text-xs mobile-hide">${newRow.latency}</td>
-                <td class="px-4 py-4 text-right font-mono font-bold text-sm ${newRow.hrs > 0.4 ? 'text-rose-600' : 'text-slate-700'}">${newRow.hrs}</td>
+                <td class="px-4 py-4 text-right font-mono text-slate-500 text-xs mobile-hide align-top pt-6">${newRow.latency}</td>
+                <td class="px-4 py-4 text-right font-mono font-bold text-sm ${newRow.hrs > 0.5 ? 'text-rose-600' : 'text-slate-700'} align-top pt-6">${newRow.hrs}</td>
             `;
             tbody.appendChild(tr);
+            
+            // 自動向下捲動表格，保持最新項目在可視範圍
             tr.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
 
-            // 增量同步圖表
+            // 更新圓餅圖數據
             document.getElementById('pie-total').innerText = totalEvals;
             document.getElementById('leg-c').innerText = ((counts.C / totalEvals) * 100).toFixed(1) + '%';
             document.getElementById('leg-b').innerText = ((counts.B / totalEvals) * 100).toFixed(1) + '%';
@@ -1010,15 +1013,17 @@
             document.getElementById('leg-a').innerText = ((counts.A / totalEvals) * 100).toFixed(1) + '%';
             
             pieChartInstance.data.datasets[0].data = [counts.C, counts.B, counts.D, counts.A];
-            pieChartInstance.update('none');
+            pieChartInstance.update('none'); 
 
+            // 更新散佈圖數據
             const pt = { x: newRow.latency, y: parseFloat(newRow.hrs), title: newRow.title, model: newRow.model };
             const pType = newRow.type.includes('Type_C') ? 'Type_C' : (newRow.type.includes('Type_B') ? 'Type_B' : (newRow.type.includes('Type_D') ? 'Type_D' : 'Type_A'));
             
-            if(pType === 'Type_C') scatterChartInstance.data.datasets[0].data.push(pt); 
-            else if(pType === 'Type_B') scatterChartInstance.data.datasets[1].data.push(pt); 
-            else if(pType === 'Type_A') scatterChartInstance.data.datasets[2].data.push(pt); 
+            if(pType==='Type_C') scatterChartInstance.data.datasets[0].data.push(pt); 
+            else if(pType==='Type_B') scatterChartInstance.data.datasets[1].data.push(pt); 
+            else if(pType==='Type_A') scatterChartInstance.data.datasets[2].data.push(pt); 
             else scatterChartInstance.data.datasets[3].data.push(pt);
+            
             scatterChartInstance.update('none');
         }
     </script>
