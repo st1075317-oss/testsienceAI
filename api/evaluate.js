@@ -11,7 +11,9 @@ export default async function handler(req, res) {
         
         // 從 Vercel 環境變數獲取金鑰
         const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
-        const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
+        const GEMINI_API_KEY_1 = process.env.GEMINI_API_KEY_1;
+        const GEMINI_API_KEY_2 = process.env.GEMINI_API_KEY_2;
+        const GEMINI_API_KEY_3 = process.env.GEMINI_API_KEY_3;
 
         let resultText = "";
         const startTime = Date.now();
