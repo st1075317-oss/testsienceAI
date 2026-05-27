@@ -877,155 +877,81 @@
 
         // 核心非同步評測管線執行序
         const processNext = async () => {
-            if (!isRunning) return;
+    if (!isRunning) return;
 
-            if (simState.currentIndex >= simState.totalItems) {
-                isRunning = false; isPaused = false;
-                updateButtonStates();
-                const progressText = document.getElementById('progress-text');
-                progressText.className = 'text-[10px] px-3 py-1 rounded-full font-bold uppercase tracking-wider bg-emerald-100 text-emerald-700';
-                progressText.innerHTML = `<i class="fa-solid fa-circle-check mr-1"></i> 全量 100 題真實 API 評測完成！`;
-                return;
-            }
+    if (simState.currentIndex >= simState.totalItems) {
+        isRunning = false; isPaused = false;
+        updateButtonStates();
+        const progressText = document.getElementById('progress-text');
+        progressText.className = 'text-[10px] px-3 py-1 rounded-full font-bold uppercase tracking-wider bg-emerald-100 text-emerald-700';
+        progressText.innerHTML = `<i class="fa-solid fa-circle-check mr-1"></i> 全量真實 API 評測完成！`;
+        return;
+    }
 
-            const activeModel = simState.selectedModels[Math.floor(Math.random() * simState.selectedModels.length)];
-            const taskPrompt = TEST_QUESTIONS[simState.currentIndex];
+    const activeModel = simState.selectedModels[Math.floor(Math.random() * simState.selectedModels.length)];
+    // 從題庫中抓取題目
+    const taskPrompt = TEST_QUESTIONS[simState.currentIndex % TEST_QUESTIONS.length];
 
-            const progressText = document.getElementById('progress-text');
-            progressText.className = 'text-[10px] px-3 py-1 rounded-full font-bold uppercase tracking-wider bg-amber-100 text-amber-700';
-            progressText.innerHTML = `<i class="fa-solid fa-circle-notch fa-spin mr-1"></i> 正在呼叫後端 API 引擎: ${activeModel.split(' ')[0]} (題數 ${simState.currentIndex + 1}/${simState.totalItems})`;
+    const progressText = document.getElementById('progress-text');
+    progressText.className = 'text-[10px] px-3 py-1 rounded-full font-bold uppercase tracking-wider bg-amber-100 text-amber-700';
+    progressText.innerHTML = `<i class="fa-solid fa-circle-notch fa-spin mr-1"></i> 正在呼叫後端 API: ${activeModel.split(' ')[0]} (題數 ${simState.currentIndex + 1}/${simState.totalItems})`;
 
-            try {
-                // 發送 POST 請求至 Vercel Serverless Function 後端
-                const response = await fetch('/api/evaluate', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                        model: activeModel,
-                        prompt: taskPrompt,
-                        temp: hyperParams.temp,
-                        kValue: hyperParams.kValue,
-                        cotLevel: hyperParams.cot,
-                        mechanisms: mechanisms
-                    })
-                });
+    try {
+        // 發送 POST 請求至 Vercel Serverless Function 後端
+        const response = await fetch('/api/evaluate', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                model: activeModel,
+                prompt: taskPrompt,
+                temp: hyperParams.temp,
+                kValue: hyperParams.kValue,
+                cotLevel: hyperParams.cot,
+                mechanisms: mechanisms
+            })
+        });
 
-                const data = await response.json();
+        const data = await response.json();
 
-                if (data.success && isRunning) {
-                    // 累加防禦判定標籤
-                    data.types.forEach(t => {
-                        const pureType = t.replace('Type_', '');
-                        simState.typeCounts[pureType]++;
-                    });
+        if (data.success && isRunning) {
+            // 累加防禦判定標籤
+            data.types.forEach(t => {
+                const pureType = t.replace('Type_', '');
+                simState.typeCounts[pureType]++;
+            });
 
-                    // 建立前端結構化列資料
-                    const rowData = {
-                        id: simState.currentIndex,
-                        title: taskPrompt,
-                        model: activeModel,
-                        type: data.types,
-                        latency: data.latency,
-                        fad: data.fad,
-                        hrs: data.hrs,
-                        rawOutput: data.response, // 保存後端返回的真實模型文字
-                        timestamp: new Date().toLocaleTimeString('en-US', { hour12: false })
-                    };
+            // 建立前端結構化列資料 (包含真實的回應文字)
+            const rowData = {
+                id: simState.currentIndex,
+                title: taskPrompt, // 顯示真實題目
+                model: activeModel,
+                type: data.types,
+                latency: data.latency,
+                fad: data.fad,
+                hrs: data.hrs,
+                rawOutput: data.response, // ★ 保存後端返回的真實模型文字
+                timestamp: new Date().toLocaleTimeString('en-US', { hour12: false })
+            };
 
-                    simState.results.push(rowData);
-                    updateUIIncremental(rowData, simState.results, simState.typeCounts, simState.currentIndex + 1);
-                    simState.currentIndex++;
+            simState.results.push(rowData);
+            // 呼叫稍早更新過、會顯示完整原文本的 updateUIIncremental
+            updateUIIncremental(rowData, simState.results, simState.typeCounts, simState.currentIndex + 1);
+            simState.currentIndex++;
 
-                    // 設定安全延遲間隔防止突發頻率限制 (Rate Limit)
-                    simTimeout = setTimeout(() => processNext(), 1200);
-                } else if (!data.success) {
-                    console.error("後端模型呼叫失敗:", data.error);
-                    progressText.innerHTML = `<i class="fa-solid fa-triangle-exclamation mr-1"></i> 後端金鑰缺失或異常，3 秒後嘗試重試...`;
-                    simTimeout = setTimeout(() => processNext(), 3000);
-                }
-            } catch (err) {
-                console.error("網路通訊或跨域阻斷異常:", err);
-                progressText.innerHTML = `<i class="fa-solid fa-wifi mr-1"></i> 伺服器通訊錯誤，3 秒後自動重試管道...`;
-                simTimeout = setTimeout(() => processNext(), 3000);
-            }
-        };
+            // ★ 設定 4.5 秒安全延遲間隔，防止觸發 Gemini 免費版的 Rate Limit 封鎖
+            simTimeout = setTimeout(() => processNext(), 4500);
 
-        // 增量動態渲染 UI 數據面板
-// 增量更新 UI 函式
-        function updateUIIncremental(newRow, data, counts, currentCount) {
-            const totalEvals = currentCount * 3; 
-            
-            // 計算當前平均值
-            const avgHrs = data.reduce((sum, r) => sum + parseFloat(r.hrs), 0) / currentCount;
-            const avgFad = data.reduce((sum, r) => sum + parseFloat(r.fad), 0) / currentCount;
-            const avgLat = data.reduce((sum, r) => sum + r.latency, 0) / currentCount;
-            const intervention = ((counts.B + counts.C + counts.D) / totalEvals * 100).toFixed(1);
-            
-            const activeMechs = Object.values(mechanisms).filter(v=>v).length;
-            const simulatedKappa = (0.83 + (activeMechs * 0.01) + (Math.random() * 0.02)).toFixed(2);
-
-            // 更新 KPI 看板
-            document.getElementById('kpi-hrs').innerText = avgHrs.toFixed(3);
-            document.getElementById('kpi-fad').innerText = avgFad.toFixed(2);
-            document.getElementById('kpi-latency').innerText = Math.floor(avgLat).toLocaleString();
-            document.getElementById('kpi-intervention').innerText = `${intervention}%`;
-            document.getElementById('kpi-kappa').innerText = simulatedKappa;
-
-            // ★ 核心改動：直接提取完整原文本，不做任何截斷
-            const fullText = (newRow.rawOutput && newRow.rawOutput.trim().length > 0) 
-                ? newRow.rawOutput 
-                : "（模型採取防禦機制安全拒答，或目前處於本地模擬模式）";
-
-            // 即時加入新資料列到表格
-            const tbody = document.getElementById('table-body');
-            const tr = document.createElement('tr');
-            tr.className = 'hover:bg-slate-50 transition-colors cursor-pointer group border-b border-slate-100';
-            tr.onclick = () => openModal(encodeURIComponent(JSON.stringify(newRow)));
-            
-            const badgesHTML = newRow.type.map(t => {
-                let badgeClass = t === 'Type_A' ? 'bg-emerald-100 text-emerald-700' : t === 'Type_B' ? 'bg-amber-100 text-amber-700' : t === 'Type_C' ? 'bg-rose-100 text-rose-700' : 'bg-slate-200 text-slate-700';
-                return `<td class="px-1 py-4 align-top pt-6"><span class="px-1 py-1 rounded-md text-[9px] font-black uppercase tracking-wider ${badgeClass} block text-center whitespace-nowrap">${t.replace('Type_', '')}</span></td>`;
-            }).join('');
-
-            // ★ 表格結構改動：加入 fullText 區塊，並設定 align-top 確保排版對齊
-            tr.innerHTML = `
-                <td class="px-6 py-4 max-w-xl align-top">
-                    <p class="font-bold text-slate-800 group-hover:text-indigo-600 transition-colors">${newRow.title}</p>
-                    <p class="text-[10px] text-slate-400 font-mono mt-1 mb-3"><i class="fa-solid fa-robot"></i> ${newRow.model}</p>
-                    <div class="text-[13px] text-slate-700 bg-slate-50 border border-slate-200 rounded-xl p-4 whitespace-pre-wrap font-sans leading-relaxed shadow-inner">
-                        ${fullText}
-                    </div>
-                </td>
-                ${badgesHTML}
-                <td class="px-4 py-4 text-right font-mono text-slate-500 text-xs mobile-hide align-top pt-6">${newRow.latency}</td>
-                <td class="px-4 py-4 text-right font-mono font-bold text-sm ${newRow.hrs > 0.5 ? 'text-rose-600' : 'text-slate-700'} align-top pt-6">${newRow.hrs}</td>
-            `;
-            tbody.appendChild(tr);
-            
-            // 自動向下捲動表格，保持最新項目在可視範圍
-            tr.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
-
-            // 更新圓餅圖數據
-            document.getElementById('pie-total').innerText = totalEvals;
-            document.getElementById('leg-c').innerText = ((counts.C / totalEvals) * 100).toFixed(1) + '%';
-            document.getElementById('leg-b').innerText = ((counts.B / totalEvals) * 100).toFixed(1) + '%';
-            document.getElementById('leg-d').innerText = ((counts.D / totalEvals) * 100).toFixed(1) + '%';
-            document.getElementById('leg-a').innerText = ((counts.A / totalEvals) * 100).toFixed(1) + '%';
-            
-            pieChartInstance.data.datasets[0].data = [counts.C, counts.B, counts.D, counts.A];
-            pieChartInstance.update('none'); 
-
-            // 更新散佈圖數據
-            const pt = { x: newRow.latency, y: parseFloat(newRow.hrs), title: newRow.title, model: newRow.model };
-            const pType = newRow.type.includes('Type_C') ? 'Type_C' : (newRow.type.includes('Type_B') ? 'Type_B' : (newRow.type.includes('Type_D') ? 'Type_D' : 'Type_A'));
-            
-            if(pType==='Type_C') scatterChartInstance.data.datasets[0].data.push(pt); 
-            else if(pType==='Type_B') scatterChartInstance.data.datasets[1].data.push(pt); 
-            else if(pType==='Type_A') scatterChartInstance.data.datasets[2].data.push(pt); 
-            else scatterChartInstance.data.datasets[3].data.push(pt);
-            
-            scatterChartInstance.update('none');
+        } else if (!data.success) {
+            console.error("後端模型呼叫失敗:", data.error);
+            progressText.innerHTML = `<i class="fa-solid fa-triangle-exclamation mr-1"></i> 呼叫失敗或金鑰錯誤，5 秒後重試...`;
+            simTimeout = setTimeout(() => processNext(), 5000);
         }
+    } catch (err) {
+        console.error("網路通訊異常:", err);
+        progressText.innerHTML = `<i class="fa-solid fa-wifi mr-1"></i> 伺服器通訊錯誤，5 秒後自動重試...`;
+        simTimeout = setTimeout(() => processNext(), 5000);
+    }
+};
     </script>
 </body>
 </html>
