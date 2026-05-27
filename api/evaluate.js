@@ -96,7 +96,8 @@ export default async function handler(req, res) {
             latency: latency,
             types: evalTypes,
             hrs: avgHrs,
-            fad: fad
+            fad: fad,
+            response: resultText
         });
 
     } catch (error) {
